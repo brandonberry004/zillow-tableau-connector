@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zillow API - Tableau Web Data Connector</title>
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <script src="https://connectors.tableau.com/libs/tableauwdc-2.3.latest.js" type="text/javascript"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; padding: 40px 20px; }
+        .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 40px; }
+        h1 { font-size: 24px; margin-bottom: 8px; color: #1a1a2e; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; color: #444; }
+        input, select { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 20px; }
+        input:focus, select:focus { outline: none; border-color: #006d77; }
+        .row { display: flex; gap: 16px; }
+        .row > div { flex: 1; }
+        .checkbox-group { margin-bottom: 20px; }
+        .checkbox-group label { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; margin-right: 20px; cursor: pointer; }
+        .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
+        button { background: #006d77; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; }
+        button:hover { background: #005a63; }
+        .help { font-size: 12px; color: #888; margin-top: -14px; margin-bottom: 20px; }
+        .section-header { font-size: 16px; font-weight: 600; color: #006d77; margin: 24px 0 16px; padding-top: 16px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Zillow Data Connector</h1>
+        <p class="subtitle">Connect Tableau to live Zillow real estate data via RapidAPI</p>
+        <label for="apiKey">RapidAPI Key</label>
+        <input type="password" id="apiKey" placeholder="Enter your RapidAPI key" />
+        <div class="section-header">Locations</div>
+        <label for="locations">Cities / ZIP Codes</label>
+        <input type="text" id="locations" placeholder="e.g. Austin TX, Denver CO, 90210, Seattle WA" />
+        <p class="help">Comma-separated list of cities or ZIP codes to pull data for.</p>
+        <div class="section-header">Data Types</div>
+        <div class="checkbox-group">
+            <label><input type="checkbox" id="forSale" checked /> For Sale</label>
+            <label><input type="checkbox" id="forRent" checked /> Rentals</label>
+            <label><input type="checkbox" id="recentlySold" checked /> Recently Sold</label>
+        </div>
+        <div class="section-header">Filters</div>
+        <div class="row">
+            <div><label for="minPrice">Min Price</label><input type="number" id="minPrice" placeholder="No min" /></div>
+            <div><label for="maxPrice">Max Price</label><input type="number" id="maxPrice" placeholder="No max" /></div>
+        </div>
+        <div class="row">
+            <div><label for="bedsMin">Min Beds</label><select id="bedsMin"><option value="">Any</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option></select></div>
+            <div><label for="homeType">Home Type</label><select id="homeType"><option value="">All Types</option><option value="Houses">Houses</option><option value="Condos">Condos</option><option value="Townhomes">Townhomes</option><option value="Apartments">Apartments</option><option value="Multi-family">Multi-family</option></select></div>
+        </div>
+        <div class="row" style="margin-top: 8px;">
+            <div><label for="maxPages">Pages per Location</label><select id="maxPages"><option value="1">1 (fastest)</option><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="10">10 (most data)</option></select></div>
+            <div></div>
+        </div>
+        <p class="help">More pages = more properties but uses more API calls.</p>
+        <button id="submitBtn" style="margin-top: 16px;">Get Zillow Data</button>
+    </div>
+    <script>
+        (function () {
+            var myConnector = tableau.makeConnector();
+            myConnector.getSchema = function (schemaCallback) {
+                var cols = [
+                    { id: "zpid", alias: "Zillow Property ID", dataType: tableau.dataTypeEnum.string },
+                    { id: "address", alias: "Address", dataType: tableau.dataTypeEnum.string },
+                    { id: "city", alias: "City", dataType: tableau.dataTypeEnum.string },
+                    { id: "state", alias: "State", dataType: tableau.dataTypeEnum.string },
+                    { id: "zipcode", alias: "ZIP Code", dataType: tableau.dataTypeEnum.string },
+                    { id: "price", alias: "Price", dataType: tableau.dataTypeEnum.float },
+                    { id: "zestimate", alias: "Zestimate", dataType: tableau.dataTypeEnum.float },
+                    { id: "rent_zestimate", alias: "Rent Zestimate", dataType: tableau.dataTypeEnum.float },
+                    { id: "bedrooms", alias: "Bedrooms", dataType: tableau.dataTypeEnum.int },
+                    { id: "bathrooms", alias: "Bathrooms", dataType: tableau.dataTypeEnum.float },
+                    { id: "living_area", alias: "Living Area (sqft)", dataType: tableau.dataTypeEnum.int },
+                    { id: "lot_size", alias: "Lot Size (sqft)", dataType: tableau.dataTypeEnum.int },
+                    { id: "home_type", alias: "Home Type", dataType: tableau.dataTypeEnum.string },
+                    { id: "home_status", alias: "Status", dataType: tableau.dataTypeEnum.string },
+                    { id: "year_built", alias: "Year Built", dataType: tableau.dataTypeEnum.int },
+                    { id: "days_on_zillow", alias: "Days on Zillow", dataType: tableau.dataTypeEnum.int },
+                    { id: "price_per_sqft", alias: "Price per Sqft", dataType: tableau.dataTypeEnum.float },
+                    { id: "latitude", alias: "Latitude", dataType: tableau.dataTypeEnum.float },
+                    { id: "longitude", alias: "Longitude", dataType: tableau.dataTypeEnum.float },
+                    { id: "listing_type", alias: "Listing Type", dataType: tableau.dataTypeEnum.string },
+                    { id: "search_location", alias: "Search Location", dataType: tableau.dataTypeEnum.string },
+                    { id: "fetched_at", alias: "Data Fetched At", dataType: tableau.dataTypeEnum.datetime }
+                ];
+                schemaCallback([{ id: "zillow_properties", alias: "Zillow Properties", columns: cols }]);
+            };
+            myConnector.getData = function (table, doneCallback) {
+                var config = JSON.parse(tableau.connectionData);
+                var apiKey = config.apiKey, locations = config.locations, statuses = config.statuses;
+                var minPrice = config.minPrice, maxPrice = config.maxPrice, bedsMin = config.bedsMin;
+                var homeType = config.homeType, maxPages = config.maxPages || 3;
+                var allRows = [], requestQueue = [];
+                for (var i = 0; i < locations.length; i++) { for (var s = 0; s < statuses.length; s++) { for (var p = 1; p <= maxPages; p++) { requestQueue.push({ location: locations[i], status: statuses[s], page: p }); } } }
+                var currentRequest = 0;
+                function processNext() {
+                    if (currentRequest >= requestQueue.length) { table.appendRows(allRows); doneCallback(); return; }
+                    var req = requestQueue[currentRequest];
+                    var params = new URLSearchParams({ location: req.location, status_type: req.status, page: req.page });
+                    if (minPrice) params.append("minPrice", minPrice);
+                    if (maxPrice) params.append("maxPrice", maxPrice);
+                    if (bedsMin) params.append("bedsMin", bedsMin);
+                    if (homeType) params.append("home_type", homeType);
+                    var xhr = new XMLHttpRequest();
+                    xhr.open("GET", "https://zillow-com1.p.rapidapi.com/propertyExtendedSearch?" + params.toString());
+                    xhr.setRequestHeader("x-rapidapi-key", apiKey);
+                    xhr.setRequestHeader("x-rapidapi-host", "zillow-com1.p.rapidapi.com");
+                    xhr.onload = function () {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                var props = data.props || data.results || [];
+                                var now = new Date().toISOString();
+                                var listingType = req.status === "forSale" ? "For Sale" : req.status === "forRent" ? "Rental" : "Recently Sold";
+                                for (var j = 0; j < props.length; j++) {
+                                    var p = props[j], addr = p.address || "";
+                                    var addrStr = "", cityStr = "", stateStr = "", zipStr = "";
+                                    if (typeof addr === "object") { addrStr = addr.streetAddress || ""; cityStr = addr.city || ""; stateStr = addr.state || ""; zipStr = addr.zipcode || ""; }
+                                    else { addrStr = addr; cityStr = p.city || ""; stateStr = p.state || ""; zipStr = p.zipcode || ""; }
+                                    var price = p.price || p.listPrice || null;
+                                    var area = p.livingArea || p.livingAreaSqFt || null;
+                                    var ppsf = (price && area) ? Math.round(price / area * 100) / 100 : null;
+                                    allRows.push({ zpid: String(p.zpid || ""), address: addrStr, city: cityStr, state: stateStr, zipcode: zipStr, price: price, zestimate: p.zestimate || null, rent_zestimate: p.rentZestimate || null, bedrooms: p.bedrooms || p.beds || null, bathrooms: p.bathrooms || p.baths || null, living_area: area, lot_size: p.lotSize || p.lotAreaValue || null, home_type: p.homeType || p.propertyType || "", home_status: p.homeStatus || p.status || "", year_built: p.yearBuilt || null, days_on_zillow: p.daysOnZillow || null, price_per_sqft: ppsf, latitude: p.latitude || p.lat || null, longitude: p.longitude || p.lng || null, listing_type: listingType, search_location: req.location, fetched_at: now });
+                                }
+                            } catch (e) { tableau.log("Parse error: " + e.message); }
+                        } else if (xhr.status === 429) { setTimeout(processNext, 2000); return; }
+                        currentRequest++; setTimeout(processNext, 300);
+                    };
+                    xhr.onerror = function () { currentRequest++; setTimeout(processNext, 300); };
+                    xhr.send();
+                }
+                processNext();
+            };
+            tableau.registerConnector(myConnector);
+            document.getElementById("submitBtn").addEventListener("click", function () {
+                var apiKey = document.getElementById("apiKey").value.trim();
+                var locationsRaw = document.getElementById("locations").value.trim();
+                if (!apiKey) { alert("Please enter your RapidAPI key."); return; }
+                if (!locationsRaw) { alert("Please enter at least one location."); return; }
+                var locations = locationsRaw.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+                var statuses = [];
+                if (document.getElementById("forSale").checked) statuses.push("forSale");
+                if (document.getElementById("forRent").checked) statuses.push("forRent");
+                if (document.getElementById("recentlySold").checked) statuses.push("recentlySold");
+                if (statuses.length === 0) { alert("Select at least one data type."); return; }
+                tableau.connectionData = JSON.stringify({ apiKey: apiKey, locations: locations, statuses: statuses, minPrice: document.getElementById("minPrice").value || "", maxPrice: document.getElementById("maxPrice").value || "", bedsMin: document.getElementById("bedsMin").value || "", homeType: document.getElementById("homeType").value || "", maxPages: parseInt(document.getElementById("maxPages").value) || 3 });
+                tableau.connectionName = "Zillow Properties (" + locations.join(", ") + ")";
+                tableau.submit();
+            });
+        })();
+    </script>
+</body>
+</html>
