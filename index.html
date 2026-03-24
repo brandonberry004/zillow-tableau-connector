@@ -11,14 +11,14 @@
         h1 { font-size: 24px; margin-bottom: 8px; color: #1a1a2e; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
         label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; color: #444; }
-        input, select { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 20px; }
+        input, select { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 20px; transition: border-color 0.2s; }
         input:focus, select:focus { outline: none; border-color: #006d77; }
         .row { display: flex; gap: 16px; }
         .row > div { flex: 1; }
         .checkbox-group { margin-bottom: 20px; }
         .checkbox-group label { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; margin-right: 20px; cursor: pointer; }
         .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
-        button { background: #006d77; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; }
+        button { background: #006d77; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; transition: background 0.2s; }
         button:hover { background: #005a63; }
         .help { font-size: 12px; color: #888; margin-top: -14px; margin-bottom: 20px; }
         .section-header { font-size: 16px; font-weight: 600; color: #006d77; margin: 24px 0 16px; padding-top: 16px; border-top: 1px solid #eee; }
@@ -32,7 +32,7 @@
         <input type="password" id="apiKey" placeholder="Enter your RapidAPI key" />
         <div class="section-header">Locations</div>
         <label for="locations">Cities / ZIP Codes</label>
-        <input type="text" id="locations" placeholder="e.g. Austin TX, Denver CO, 90210, Seattle WA" />
+        <input type="text" id="locations" placeholder="e.g. Scottsdale AZ, Gatlinburg TN, Sevierville TN" />
         <p class="help">Comma-separated list of cities or ZIP codes to pull data for.</p>
         <div class="section-header">Data Types</div>
         <div class="checkbox-group">
@@ -47,13 +47,13 @@
         </div>
         <div class="row">
             <div><label for="bedsMin">Min Beds</label><select id="bedsMin"><option value="">Any</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option></select></div>
-            <div><label for="homeType">Home Type</label><select id="homeType"><option value="">All Types</option><option value="Houses">Houses</option><option value="Condos">Condos</option><option value="Townhomes">Townhomes</option><option value="Apartments">Apartments</option><option value="Multi-family">Multi-family</option></select></div>
+            <div><label for="homeType">Home Type</label><select id="homeType"><option value="">All Types</option><option value="house">Houses</option><option value="condo">Condos</option><option value="townhouse">Townhomes</option><option value="apartment">Apartments</option><option value="multi_family">Multi-family</option></select></div>
         </div>
         <div class="row" style="margin-top: 8px;">
-            <div><label for="maxPages">Pages per Location</label><select id="maxPages"><option value="1">1 (fastest)</option><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="10">10 (most data)</option></select></div>
-            <div></div>
+            <div><label for="maxPages">Pages per Location</label><select id="maxPages"><option value="1" selected>1 (fastest)</option><option value="2">2</option><option value="3">3</option><option value="5">5</option></select></div>
+            <div><label for="pageSize">Results per Page</label><select id="pageSize"><option value="40" selected>40 (default)</option><option value="100">100</option><option value="200">200</option></select></div>
         </div>
-        <p class="help">More pages = more properties but uses more API calls.</p>
+        <p class="help">More pages = more properties but uses more API calls. Free plan: 50 calls/month.</p>
         <button id="submitBtn" style="margin-top: 16px;">Get Zillow Data</button>
     </div>
     <script>
@@ -88,46 +88,128 @@
             };
             myConnector.getData = function (table, doneCallback) {
                 var config = JSON.parse(tableau.connectionData);
-                var apiKey = config.apiKey, locations = config.locations, statuses = config.statuses;
-                var minPrice = config.minPrice, maxPrice = config.maxPrice, bedsMin = config.bedsMin;
-                var homeType = config.homeType, maxPages = config.maxPages || 3;
-                var allRows = [], requestQueue = [];
-                for (var i = 0; i < locations.length; i++) { for (var s = 0; s < statuses.length; s++) { for (var p = 1; p <= maxPages; p++) { requestQueue.push({ location: locations[i], status: statuses[s], page: p }); } } }
+                var apiKey = config.apiKey;
+                var locations = config.locations;
+                var statuses = config.statuses;
+                var minPrice = config.minPrice;
+                var maxPrice = config.maxPrice;
+                var bedsMin = config.bedsMin;
+                var homeType = config.homeType;
+                var maxPages = config.maxPages || 1;
+                var pageSize = config.pageSize || 40;
+                var allRows = [];
+                var requestQueue = [];
+                for (var i = 0; i < locations.length; i++) {
+                    for (var s = 0; s < statuses.length; s++) {
+                        for (var p = 1; p <= maxPages; p++) {
+                            requestQueue.push({ location: locations[i], status: statuses[s], page: p });
+                        }
+                    }
+                }
                 var currentRequest = 0;
+                function extractProperty(p, listingType, searchLocation) {
+                    var addr = "", cityStr = "", stateStr = "", zipStr = "";
+                    if (p.address) {
+                        if (typeof p.address === "object") {
+                            addr = p.address.streetAddress || p.address.street || "";
+                            cityStr = p.address.city || "";
+                            stateStr = p.address.state || "";
+                            zipStr = p.address.zipcode || p.address.zip || "";
+                        } else { addr = p.address; }
+                    }
+                    if (!cityStr) cityStr = p.city || p.addressCity || "";
+                    if (!stateStr) stateStr = p.state || p.addressState || "";
+                    if (!zipStr) zipStr = p.zipcode || p.zip || p.addressZipcode || "";
+                    if (!addr) addr = p.streetAddress || p.formattedAddress || "";
+                    var price = p.price || p.listPrice || p.soldPrice || p.unformattedPrice || null;
+                    if (typeof price === "string") price = parseFloat(price.replace(/[^0-9.]/g, "")) || null;
+                    var area = p.livingArea || p.livingAreaSqFt || p.sqft || p.livingAreaValue || null;
+                    var pricePerSqft = (price && area) ? Math.round(price / area * 100) / 100 : null;
+                    return {
+                        zpid: String(p.zpid || p.id || p.propertyId || ""),
+                        address: addr, city: cityStr, state: stateStr, zipcode: zipStr,
+                        price: price,
+                        zestimate: p.zestimate || p.zestimateValue || null,
+                        rent_zestimate: p.rentZestimate || p.rentZestimateValue || null,
+                        bedrooms: p.bedrooms || p.beds || null,
+                        bathrooms: p.bathrooms || p.baths || null,
+                        living_area: area,
+                        lot_size: p.lotSize || p.lotAreaValue || p.lotSizeSqFt || null,
+                        home_type: p.homeType || p.propertyType || p.property_type || "",
+                        home_status: p.homeStatus || p.status || p.listingStatus || "",
+                        year_built: p.yearBuilt || p.year_built || null,
+                        days_on_zillow: p.daysOnZillow || p.days_on_zillow || null,
+                        price_per_sqft: pricePerSqft || p.pricePerSqFt || null,
+                        latitude: p.latitude || p.lat || (p.location ? p.location.lat : null) || null,
+                        longitude: p.longitude || p.lng || p.lon || (p.location ? p.location.lon : null) || null,
+                        listing_type: listingType, search_location: searchLocation,
+                        fetched_at: new Date().toISOString()
+                    };
+                }
+                function findPropsArray(data) {
+                    if (Array.isArray(data)) return data;
+                    if (data.data && Array.isArray(data.data)) return data.data;
+                    if (data.results && Array.isArray(data.results)) return data.results;
+                    if (data.props && Array.isArray(data.props)) return data.props;
+                    if (data.properties && Array.isArray(data.properties)) return data.properties;
+                    if (data.listings && Array.isArray(data.listings)) return data.listings;
+                    if (data.searchResults && Array.isArray(data.searchResults)) return data.searchResults;
+                    if (data.data && data.data.results && Array.isArray(data.data.results)) return data.data.results;
+                    if (data.data && data.data.properties && Array.isArray(data.data.properties)) return data.data.properties;
+                    var keys = Object.keys(data);
+                    for (var k = 0; k < keys.length; k++) {
+                        if (Array.isArray(data[keys[k]]) && data[keys[k]].length > 0) {
+                            var firstItem = data[keys[k]][0];
+                            if (firstItem && (firstItem.zpid || firstItem.price || firstItem.address || firstItem.id)) return data[keys[k]];
+                        }
+                    }
+                    return [];
+                }
                 function processNext() {
-                    if (currentRequest >= requestQueue.length) { table.appendRows(allRows); doneCallback(); return; }
+                    if (currentRequest >= requestQueue.length) {
+                        tableau.log("Total rows collected: " + allRows.length);
+                        table.appendRows(allRows);
+                        doneCallback();
+                        return;
+                    }
                     var req = requestQueue[currentRequest];
-                    var params = new URLSearchParams({ location: req.location, status_type: req.status, page: req.page });
-                    if (minPrice) params.append("minPrice", minPrice);
-                    if (maxPrice) params.append("maxPrice", maxPrice);
-                    if (bedsMin) params.append("bedsMin", bedsMin);
+                    var statusMap = { "forSale": "for_sale", "forRent": "for_rent", "recentlySold": "sold" };
+                    var apiStatus = statusMap[req.status] || req.status;
+                    var listingType = req.status === "forSale" ? "For Sale" : req.status === "forRent" ? "Rental" : "Recently Sold";
+                    var params = new URLSearchParams({ location: req.location, status: apiStatus, page: req.page, page_size: pageSize, sort: "relevance" });
+                    if (minPrice) params.append("price_min", minPrice);
+                    if (maxPrice) params.append("price_max", maxPrice);
+                    if (bedsMin) params.append("beds_min", bedsMin);
                     if (homeType) params.append("home_type", homeType);
+                    var url = "https://zillow-real-estate-api.p.rapidapi.com/v1/search?" + params.toString();
+                    tableau.log("Fetching: " + url);
                     var xhr = new XMLHttpRequest();
-                    xhr.open("GET", "https://zillow-com1.p.rapidapi.com/propertyExtendedSearch?" + params.toString());
+                    xhr.open("GET", url);
                     xhr.setRequestHeader("x-rapidapi-key", apiKey);
-                    xhr.setRequestHeader("x-rapidapi-host", "zillow-com1.p.rapidapi.com");
+                    xhr.setRequestHeader("x-rapidapi-host", "zillow-real-estate-api.p.rapidapi.com");
+                    xhr.setRequestHeader("Content-Type", "application/json");
                     xhr.onload = function () {
+                        tableau.log("Response status: " + xhr.status + " for " + req.location + " (" + apiStatus + ")");
                         if (xhr.status === 200) {
                             try {
                                 var data = JSON.parse(xhr.responseText);
-                                var props = data.props || data.results || [];
-                                var now = new Date().toISOString();
-                                var listingType = req.status === "forSale" ? "For Sale" : req.status === "forRent" ? "Rental" : "Recently Sold";
-                                for (var j = 0; j < props.length; j++) {
-                                    var p = props[j], addr = p.address || "";
-                                    var addrStr = "", cityStr = "", stateStr = "", zipStr = "";
-                                    if (typeof addr === "object") { addrStr = addr.streetAddress || ""; cityStr = addr.city || ""; stateStr = addr.state || ""; zipStr = addr.zipcode || ""; }
-                                    else { addrStr = addr; cityStr = p.city || ""; stateStr = p.state || ""; zipStr = p.zipcode || ""; }
-                                    var price = p.price || p.listPrice || null;
-                                    var area = p.livingArea || p.livingAreaSqFt || null;
-                                    var ppsf = (price && area) ? Math.round(price / area * 100) / 100 : null;
-                                    allRows.push({ zpid: String(p.zpid || ""), address: addrStr, city: cityStr, state: stateStr, zipcode: zipStr, price: price, zestimate: p.zestimate || null, rent_zestimate: p.rentZestimate || null, bedrooms: p.bedrooms || p.beds || null, bathrooms: p.bathrooms || p.baths || null, living_area: area, lot_size: p.lotSize || p.lotAreaValue || null, home_type: p.homeType || p.propertyType || "", home_status: p.homeStatus || p.status || "", year_built: p.yearBuilt || null, days_on_zillow: p.daysOnZillow || null, price_per_sqft: ppsf, latitude: p.latitude || p.lat || null, longitude: p.longitude || p.lng || null, listing_type: listingType, search_location: req.location, fetched_at: now });
-                                }
-                            } catch (e) { tableau.log("Parse error: " + e.message); }
-                        } else if (xhr.status === 429) { setTimeout(processNext, 2000); return; }
-                        currentRequest++; setTimeout(processNext, 300);
+                                tableau.log("Response keys: " + Object.keys(data).join(", "));
+                                var props = findPropsArray(data);
+                                tableau.log("Found " + props.length + " properties for " + req.location);
+                                for (var j = 0; j < props.length; j++) { allRows.push(extractProperty(props[j], listingType, req.location)); }
+                            } catch (e) {
+                                tableau.log("Parse error for " + req.location + ": " + e.message);
+                                tableau.log("Raw response (first 500 chars): " + xhr.responseText.substring(0, 500));
+                            }
+                        } else if (xhr.status === 429) {
+                            tableau.log("Rate limited. Waiting 3s before retry...");
+                            setTimeout(function () { processNext(); }, 3000);
+                            return;
+                        } else { tableau.log("Error " + xhr.status + " for " + req.location + ": " + xhr.responseText.substring(0, 300)); }
+                        currentRequest++;
+                        setTimeout(processNext, 500);
                     };
-                    xhr.onerror = function () { currentRequest++; setTimeout(processNext, 300); };
+                    xhr.onerror = function () { tableau.log("Network error for " + req.location); currentRequest++; setTimeout(processNext, 500); };
                     xhr.send();
                 }
                 processNext();
@@ -143,8 +225,9 @@
                 if (document.getElementById("forSale").checked) statuses.push("forSale");
                 if (document.getElementById("forRent").checked) statuses.push("forRent");
                 if (document.getElementById("recentlySold").checked) statuses.push("recentlySold");
-                if (statuses.length === 0) { alert("Select at least one data type."); return; }
-                tableau.connectionData = JSON.stringify({ apiKey: apiKey, locations: locations, statuses: statuses, minPrice: document.getElementById("minPrice").value || "", maxPrice: document.getElementById("maxPrice").value || "", bedsMin: document.getElementById("bedsMin").value || "", homeType: document.getElementById("homeType").value || "", maxPages: parseInt(document.getElementById("maxPages").value) || 3 });
+                if (statuses.length === 0) { alert("Please select at least one data type."); return; }
+                var config = { apiKey: apiKey, locations: locations, statuses: statuses, minPrice: document.getElementById("minPrice").value || "", maxPrice: document.getElementById("maxPrice").value || "", bedsMin: document.getElementById("bedsMin").value || "", homeType: document.getElementById("homeType").value || "", maxPages: parseInt(document.getElementById("maxPages").value) || 1, pageSize: parseInt(document.getElementById("pageSize").value) || 40 };
+                tableau.connectionData = JSON.stringify(config);
                 tableau.connectionName = "Zillow Properties (" + locations.join(", ") + ")";
                 tableau.submit();
             });
